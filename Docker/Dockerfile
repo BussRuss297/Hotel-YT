@@ -25,8 +25,8 @@ WORKDIR /app
 # Copy the Go binary
 COPY --from=builder /app/hotel-server .
 
-# Create data and videos directories and set ownership
-RUN mkdir -p /app/data /app/videos && chown -R hotel:hotel /app
+# Create data directory and set ownership
+RUN mkdir -p /app/data && chown -R hotel:hotel /app
 
 # Copy static assets and templates (served from embed, already in binary, 
 # but keeping for clarity and potential future use)
@@ -36,7 +36,7 @@ USER hotel
 
 EXPOSE 8080
 
-VOLUME ["/app/data", "/app/videos"]
+VOLUME ["/app/data"]
 
 ENTRYPOINT ["./hotel-server"]
-CMD ["-port", ":8080", "-data", "./data", "-videos", "./videos"]
+CMD ["-port", ":8080", "-data", "./data", "-videos", "./data"]

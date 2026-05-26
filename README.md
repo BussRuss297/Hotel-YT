@@ -43,7 +43,7 @@ cd Hotel
 # Build the binary
 go build -o hotel-server .
 
-# Run (defaults: port :8080, data ./data, videos ./videos)
+# Run (defaults: port :8080, data ./data, videos ./data)
 ./hotel-server
 
 # Custom options
@@ -56,7 +56,7 @@ go build -o hotel-server .
 |----------|-------------|-------------------------------|
 | `-port`  | `:8080`     | HTTP server listen address    |
 | `-data`  | `./data`    | Directory for metadata store  |
-| `-videos`| `./videos`  | Directory for video files     |
+| `-videos`| `./data`    | Directory for video files     |
 
 ## Docker
 
@@ -66,17 +66,15 @@ Build and run with Docker — no Go toolchain or yt-dlp needed on the host:
 # Build the image
 docker build -t hotel-server -f Docker/Dockerfile .
 
-# Run with volume mounts for persistent data and videos
+# Run with volume mount for persistent data and videos
 docker run -p 8080:8080 \
   -v "$(pwd)/data:/app/data" \
-  -v "$(pwd)/videos:/app/videos" \
   hotel-server
   
 # or use pre-built image:
 docker run --name hotel1 -p 8080:8080 \
   -v "$(pwd)/data:/app/data" \
-  -v "$(pwd)/videos:/app/videos" \
-  ghcr.io/bussruss297/hotel-yt:a9fc0eb
+  ghcr.io/bussruss297/hotel-yt
 ```
 
 The image includes `yt-dlp` and `ffmpeg`, runs as a non-root user, and exposes port 8080.
@@ -115,9 +113,8 @@ Hotel/
 ├── static/
 │   ├── css/style.css        # Shared styles
 │   └── js/app.js            # Shared JavaScript utilities
-├── data/
+├── data/                    # Video metadata & downloaded files
 │   └── videos.json          # Video metadata (auto-created)
-├── videos/                  # Downloaded video files
 ├── go.mod
 ├── .gitignore
 └── README.md

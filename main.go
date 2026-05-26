@@ -17,7 +17,7 @@ import (
 func main() {
 	port := flag.String("port", ":8080", "HTTP server port")
 	dataDir := flag.String("data", "./data", "Data directory for metadata")
-	videoDir := flag.String("videos", "./videos", "Directory for downloaded videos")
+	videoDir := flag.String("videos", "./data", "Directory for downloaded videos")
 	flag.Parse()
 
 	// Ensure directories exist

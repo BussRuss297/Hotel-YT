@@ -58,6 +58,23 @@ go build -o hotel-server .
 | `-data`  | `./data`    | Directory for metadata store  |
 | `-videos`| `./videos`  | Directory for video files     |
 
+## Docker
+
+Build and run with Docker — no Go toolchain or yt-dlp needed on the host:
+
+```bash
+# Build the image
+docker build -t hotel-server -f Docker/Dockerfile .
+
+# Run with volume mounts for persistent data and videos
+docker run -p 8080:8080 \
+  -v "$(pwd)/data:/app/data" \
+  -v "$(pwd)/videos:/app/videos" \
+  hotel-server
+```
+
+The image includes `yt-dlp` and `ffmpeg`, runs as a non-root user, and exposes port 8080.
+
 ## Usage
 
 | Page            | URL       | Description                    |

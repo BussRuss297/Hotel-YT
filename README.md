@@ -71,6 +71,12 @@ docker run -p 8080:8080 \
   -v "$(pwd)/data:/app/data" \
   -v "$(pwd)/videos:/app/videos" \
   hotel-server
+  
+# or use pre-built image:
+docker run --name hotel1 -p 8080:8080 \
+  -v "$(pwd)/data:/app/data" \
+  -v "$(pwd)/videos:/app/videos" \
+  ghcr.io/bussruss297/hotel-yt:a9fc0eb
 ```
 
 The image includes `yt-dlp` and `ffmpeg`, runs as a non-root user, and exposes port 8080.

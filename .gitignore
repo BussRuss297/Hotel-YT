@@ -3,3 +3,7 @@
 
 # Video files
 *.mp4
+
+data/
+
+hotel-server

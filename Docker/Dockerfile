@@ -17,9 +17,6 @@ FROM python:3.12-alpine
 RUN apk add --no-cache ffmpeg && \
     pip install --no-cache-dir yt-dlp
 
-# Create non-root user
-RUN adduser -D -h /app hotel
-
 WORKDIR /app
 
 # Copy the Go binary
@@ -31,8 +28,6 @@ RUN mkdir -p /app/data && chown -R hotel:hotel /app
 # Copy static assets and templates (served from embed, already in binary, 
 # but keeping for clarity and potential future use)
 COPY --from=builder /app/static ./static
-
-USER hotel
 
 EXPOSE 8080
 

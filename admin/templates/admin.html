@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="navbar-brand">
+            <a href="/">📺 Video Library</a>
+        </div>
+        <div class="navbar-links">
+            <a href="/admin" class="active">Admin Dashboard</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="page-header">
+            <h1>Admin Dashboard</h1>
+            <p>Manage your video collection</p>
+        </div>
+
+        <!-- Download Section -->
+        <div class="download-section">
+            <h2>Download Video</h2>
+            <form id="downloadForm" class="download-form">
+                <div class="form-group">
+                    <input type="url" id="videoUrl" placeholder="Paste YouTube URL here..." required />
+                </div>
+                <div class="form-actions">
+                    <button type="button" id="fetchInfoBtn" class="btn-info">Fetch Info</button>
+                    <button type="submit" id="downloadBtn" disabled>Download</button>
+                </div>
+            </form>
+
+            <div id="videoPreview" class="video-preview hidden">
+                <div class="preview-content">
+                    <img id="previewThumbnail" src="" alt="Thumbnail" class="preview-thumbnail" />
+                    <div class="preview-details">
+                        <h3 id="previewTitle"></h3>
+                        <p id="previewChannel" class="preview-channel"></p>
+                        <p id="previewDuration" class="preview-duration"></p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Console Output -->
+            <div id="consoleSection" class="console-section hidden">
+                <div class="console-header">
+                    <h3>Console Output</h3>
+                    <button type="button" id="clearConsoleBtn" class="btn-secondary btn-small">Clear</button>
+                </div>
+                <div id="consoleOutput" class="console-output"></div>
+            </div>
+        </div>
+
+        <!-- Message Toast -->
+        <div id="toast" class="toast hidden">
+            <span id="toastMessage"></span>
+        </div>
+
+        <!-- Video Management Section -->
+        <div class="management-section">
+            <div class="management-header">
+                <h2>Video Library</h2>
+                <div class="search-bar compact">
+                    <input type="text" id="adminSearchInput" placeholder="Search videos..." />
+                    <button id="adminSearchBtn">Search</button>
+                    <button id="adminClearBtn" class="btn-secondary">Clear</button>
+                </div>
+            </div>
+
+            <div id="adminVideoCount" class="video-count"></div>
+
+            <div class="table-container">
+                <table id="videoTable" class="video-table">
+                    <thead>
+                        <tr>
+                            <th>Video</th>
+                            <th>Channel</th>
+                            <th>Duration</th>
+                            <th>Size</th>
+                            <th>Added</th>
+                            <th>Views</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="videoTableBody">
+                    </tbody>
+                </table>
+            </div>
+
+            <div id="adminLoading" class="loading hidden">
+                <div class="spinner"></div>
+                <p>Loading videos...</p>
+            </div>
+
+            <div id="adminNoResults" class="no-results hidden">
+                <p>No videos found.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div id="deleteModal" class="modal hidden">
+        <div class="modal-content modal-small">
+            <h2>Confirm Delete</h2>
+            <p>Are you sure you want to delete "<span id="deleteVideoTitle"></span>"?</p>
+            <p class="warning-text">This will permanently remove the video file and cannot be undone.</p>
+            <div class="modal-actions">
+                <button id="confirmDeleteBtn" class="btn-danger">Delete</button>
+                <button id="cancelDeleteBtn" class="btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let allVideos = [];
+        let pendingVideo = null;
+        let deleteTargetId = null;
+        let eventSource = null;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchVideos();
+        });
+
+        // Toast notification
+        function showToast(message, isError = false) {
+            const toast = document.getElementById('toast');
+            const toastMsg = document.getElementById('toastMessage');
+            toastMsg.textContent = message;
+            toast.className = 'toast ' + (isError ? 'toast-error' : 'toast-success');
+            toast.classList.remove('hidden');
+            setTimeout(() => { toast.classList.add('hidden'); }, 4000);
+        }
+
+        // Console helpers
+        function consoleLog(msg, type = 'info') {
+            const consoleEl = document.getElementById('consoleOutput');
+            const line = document.createElement('div');
+            line.className = 'console-line console-' + type;
+            const ts = new Date().toLocaleTimeString();
+            line.innerHTML = '<span class="console-timestamp">[' + ts + ']</span> ' + escapeHtml(msg);
+            consoleEl.appendChild(line);
+            consoleEl.scrollTop = consoleEl.scrollHeight;
+        }
+
+        function clearConsole() {
+            document.getElementById('consoleOutput').innerHTML = '';
+        }
+
+        document.getElementById('clearConsoleBtn').addEventListener('click', clearConsole);
+
+        // Fetch video info
+        document.getElementById('fetchInfoBtn').addEventListener('click', async () => {
+            const url = document.getElementById('videoUrl').value.trim();
+            if (!url) {
+                showToast('Please enter a YouTube URL', true);
+                return;
+            }
+
+            clearConsole();
+            const consoleSection = document.getElementById('consoleSection');
+            consoleSection.classList.remove('hidden');
+            consoleLog('Fetching video info...', 'info');
+
+            const preview = document.getElementById('videoPreview');
+            preview.classList.add('hidden');
+            document.getElementById('downloadBtn').disabled = true;
+            document.getElementById('fetchInfoBtn').disabled = true;
+
+            try {
+                const resp = await fetch('/api/admin/info?url=' + encodeURIComponent(url));
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    consoleLog('ERROR: ' + (err.error || 'Failed to fetch info'), 'error');
+                    showToast(err.error || 'Failed to fetch info', true);
+                    document.getElementById('fetchInfoBtn').disabled = false;
+                    return;
+                }
+                const data = await resp.json();
+                pendingVideo = data;
+
+                consoleLog('Found: ' + data.title, 'info');
+                consoleLog('Channel: ' + (data.channel || 'Unknown'), 'info');
+                consoleLog('Duration: ' + formatDuration(data.duration), 'info');
+
+                document.getElementById('previewTitle').textContent = data.title;
+                document.getElementById('previewChannel').textContent = data.channel || 'Unknown';
+                document.getElementById('previewDuration').textContent = 'Duration: ' + formatDuration(data.duration);
+                if (data.thumbnail) {
+                    document.getElementById('previewThumbnail').src = data.thumbnail;
+                }
+
+                preview.classList.remove('hidden');
+                document.getElementById('downloadBtn').disabled = false;
+                document.getElementById('fetchInfoBtn').disabled = false;
+            } catch (err) {
+                console.error(err);
+                consoleLog('ERROR: Network error - ' + err.message, 'error');
+                showToast('Network error', true);
+                document.getElementById('fetchInfoBtn').disabled = false;
+            }
+        });
+
+        // Download video with SSE streaming
+        document.getElementById('downloadForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!pendingVideo) {
+                showToast('Please fetch video info first', true);
+                return;
+            }
+
+            const url = document.getElementById('videoUrl').value.trim();
+
+            // Show console
+            const consoleSection = document.getElementById('consoleSection');
+            consoleSection.classList.remove('hidden');
+            clearConsole();
+            consoleLog('Starting download for: ' + pendingVideo.title, 'info');
+
+            // Disable buttons
+            document.getElementById('downloadBtn').disabled = true;
+            document.getElementById('fetchInfoBtn').disabled = true;
+
+            // Close previous SSE if any
+            if (eventSource) {
+                eventSource.close();
+            }
+
+            // Start SSE connection
+            eventSource = new EventSource('/api/admin/download');
+
+            // We need to send the URL via POST, but EventSource is GET-only.
+            // So we use fetch with streaming instead.
+            eventSource.close();
+
+            try {
+                const resp = await fetch('/api/admin/download', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: url })
+                });
+
+                if (!resp.ok) {
+                    const errText = await resp.text();
+                    let errMsg = 'Download failed (HTTP ' + resp.status + ')';
+                    try {
+                        const errJson = JSON.parse(errText);
+                        errMsg = errJson.error || errMsg;
+                    } catch(e) {}
+                    consoleLog('ERROR: ' + errMsg, 'error');
+                    showToast(errMsg, true);
+                    reEnableButtons();
+                    return;
+                }
+
+                // Read SSE stream manually
+                const reader = resp.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || '';
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const data = JSON.parse(line.slice(6));
+                                consoleLog(data.line, data.type);
+                                if (data.type === 'done') {
+                                    showToast('Video downloaded successfully!');
+                                    document.getElementById('videoUrl').value = '';
+                                    document.getElementById('videoPreview').classList.add('hidden');
+                                    pendingVideo = null;
+                                    fetchVideos();
+                                }
+                                if (data.type === 'error') {
+                                    // Don't re-enable yet, wait for stream to end
+                                }
+                            } catch (parseErr) {
+                                // Skip malformed lines
+                            }
+                        }
+                    }
+                }
+
+                // Process remaining buffer
+                if (buffer.startsWith('data: ')) {
+                    try {
+                        const data = JSON.parse(buffer.slice(6));
+                        consoleLog(data.line, data.type);
+                    } catch(e) {}
+                }
+
+                reEnableButtons();
+
+            } catch (err) {
+                console.error(err);
+                consoleLog('ERROR: Network error during download - ' + err.message, 'error');
+                showToast('Network error during download', true);
+                reEnableButtons();
+            }
+        });
+
+        function reEnableButtons() {
+            document.getElementById('downloadBtn').disabled = false;
+            document.getElementById('fetchInfoBtn').disabled = false;
+        }
+
+        // Fetch videos for admin table
+        function fetchVideos(query = '') {
+            const loading = document.getElementById('adminLoading');
+            const table = document.getElementById('videoTable');
+            const noResults = document.getElementById('adminNoResults');
+
+            loading.classList.remove('hidden');
+            table.classList.add('hidden');
+            noResults.classList.add('hidden');
+
+            let url = '/api/videos';
+            if (query) {
+                url += '?q=' + encodeURIComponent(query);
+            }
+
+            fetch(url)
+                .then(r => r.json())
+                .then(videos => {
+                    allVideos = videos;
+                    loading.classList.add('hidden');
+                    if (videos.length === 0) {
+                        noResults.classList.remove('hidden');
+                    } else {
+                        table.classList.remove('hidden');
+                        renderTable(videos);
+                    }
+                    document.getElementById('adminVideoCount').textContent = videos.length + ' video' + (videos.length !== 1 ? 's' : '') + ' found';
+                })
+                .catch(err => {
+                    console.error(err);
+                    loading.classList.add('hidden');
+                    noResults.classList.remove('hidden');
+                });
+        }
+
+        function renderTable(videos) {
+            const tbody = document.getElementById('videoTableBody');
+            tbody.innerHTML = '';
+            videos.forEach(v => {
+                const tr = document.createElement('tr');
+                const safeTitle = escapeHtml(v.title).replace(/'/g, "\\'");
+                tr.innerHTML = `
+                    <td>
+                        <div class="table-video-cell">
+                            ${v.thumbnail ? '<img src="' + v.thumbnail + '" alt="" class="table-thumbnail" />' : '<div class="table-thumbnail-placeholder">🎬</div>'}
+                            <span class="table-title">${safeTitle}</span>
+                        </div>
+                    </td>
+                    <td>${escapeHtml(v.channel)}</td>
+                    <td>${formatDuration(v.duration)}</td>
+                    <td>${formatFileSize(v.file_size)}</td>
+                    <td>${formatDate(v.date_added)}</td>
+                    <td>${v.view_count || 0}</td>
+                    <td>
+                        <button class="btn-delete" onclick="confirmDelete('${v.id}', '${safeTitle}')">
+                            🗑️ Delete
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function confirmDelete(id, title) {
+            deleteTargetId = id;
+            document.getElementById('deleteVideoTitle').textContent = title;
+            document.getElementById('deleteModal').classList.remove('hidden');
+        }
+
+        document.getElementById('cancelDeleteBtn').addEventListener('click', () => {
+            document.getElementById('deleteModal').classList.add('hidden');
+            deleteTargetId = null;
+        });
+
+        document.getElementById('deleteModal').addEventListener('click', (e) => {
+            if (e.target.id === 'deleteModal') {
+                document.getElementById('deleteModal').classList.add('hidden');
+                deleteTargetId = null;
+            }
+        });
+
+        document.getElementById('confirmDeleteBtn').addEventListener('click', async () => {
+            if (!deleteTargetId) return;
+
+            try {
+                const resp = await fetch('/api/admin/videos/' + deleteTargetId, {
+                    method: 'DELETE'
+                });
+
+                if (!resp.ok) {
+                    const data = await resp.json();
+                    showToast(data.error || 'Delete failed', true);
+                    return;
+                }
+
+                showToast('Video deleted successfully');
+                document.getElementById('deleteModal').classList.add('hidden');
+                deleteTargetId = null;
+                fetchVideos();
+            } catch (err) {
+                console.error(err);
+                showToast('Network error during delete', true);
+            }
+        });
+
+        // Admin search
+        document.getElementById('adminSearchBtn').addEventListener('click', () => {
+            const q = document.getElementById('adminSearchInput').value.trim();
+            fetchVideos(q);
+        });
+
+        document.getElementById('adminSearchInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                fetchVideos(e.target.value.trim());
+            }
+        });
+
+        document.getElementById('adminClearBtn').addEventListener('click', () => {
+            document.getElementById('adminSearchInput').value = '';
+            fetchVideos();
+        });
+
+        // Helpers
+        function formatDuration(seconds) {
+            if (!seconds) return '0:00';
+            const h = Math.floor(seconds / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            const s = seconds % 60;
+            if (h > 0) {
+                return h + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+            }
+            return m + ':' + String(s).padStart(2, '0');
+        }
+
+        function formatDate(dateStr) {
+            const d = new Date(dateStr);
+            return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+        }
+
+        function formatFileSize(bytes) {
+            if (!bytes) return '0 B';
+            const unit = 1024;
+            if (bytes < unit) return bytes + ' B';
+            const units = ['KB', 'MB', 'GB', 'TB', 'PB'];
+            let i = 0;
+            let b = bytes;
+            while (b >= unit && i < units.length - 1) {
+                b /= unit;
+                i++;
+            }
+            return b.toFixed(2) + ' ' + units[i];
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>

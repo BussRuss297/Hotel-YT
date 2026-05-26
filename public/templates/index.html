@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Library</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="navbar-brand">
+            <a href="/">📺 Video Library</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="page-header">
+            <h1>Video Library</h1>
+            <p>Browse and watch our collection of videos</p>
+        </div>
+
+        <div class="search-bar">
+            <input type="text" id="searchInput" placeholder="Search videos by title or channel..." />
+            <button id="searchBtn">Search</button>
+            <button id="clearBtn" class="btn-secondary">Clear</button>
+        </div>
+
+        <div id="videoCount" class="video-count"></div>
+
+        <div id="videoGrid" class="video-grid">
+            <!-- Videos injected here -->
+        </div>
+
+        <div id="loading" class="loading hidden">
+            <div class="spinner"></div>
+            <p>Loading videos...</p>
+        </div>
+
+        <div id="noResults" class="no-results hidden">
+            <p>No videos found.</p>
+        </div>
+    </div>
+
+    <!-- Video Player Modal -->
+    <div id="playerModal" class="modal hidden">
+        <div class="modal-content modal-large">
+            <span class="modal-close" id="modalClose">&times;</span>
+            <h2 id="modalTitle"></h2>
+            <p id="modalChannel" class="modal-channel"></p>
+            <video id="videoPlayer" controls class="video-player-full">
+                Your browser does not support the video element.
+            </video>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+    <script>
+        let allVideos = [];
+
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchVideos();
+        });
+
+        function fetchVideos(query = '') {
+            const loading = document.getElementById('loading');
+            const grid = document.getElementById('videoGrid');
+            const noResults = document.getElementById('noResults');
+
+            loading.classList.remove('hidden');
+            grid.classList.add('hidden');
+            noResults.classList.add('hidden');
+
+            let url = '/api/videos';
+            if (query) {
+                url += '?q=' + encodeURIComponent(query);
+            }
+
+            fetch(url)
+                .then(r => {
+                    if (!r.ok) throw new Error('HTTP ' + r.status);
+                    return r.json();
+                })
+                .then(videos => {
+                    allVideos = videos || [];
+                    loading.classList.add('hidden');
+                    if (allVideos.length === 0) {
+                        noResults.classList.remove('hidden');
+                    } else {
+                        grid.classList.remove('hidden');
+                        renderVideos(allVideos);
+                    }
+                    document.getElementById('videoCount').textContent = allVideos.length + ' video' + (allVideos.length !== 1 ? 's' : '') + ' found';
+                })
+                .catch(err => {
+                    console.error('Error fetching videos:', err);
+                    loading.classList.add('hidden');
+                    noResults.classList.remove('hidden');
+                    document.getElementById('noResults').querySelector('p').textContent = 'Error loading videos: ' + err.message;
+                });
+        }
+
+        function renderVideos(videos) {
+            const grid = document.getElementById('videoGrid');
+            grid.innerHTML = '';
+            videos.forEach(v => {
+                const card = document.createElement('div');
+                card.className = 'video-card';
+                card.innerHTML = `
+                    <div class="video-thumbnail" onclick="playVideo('${v.id}')">
+                        ${v.thumbnail ? '<img src="' + v.thumbnail + '" alt="' + escapeHtml(v.title) + '" loading="lazy">' : '<div class="thumbnail-placeholder">🎬</div>'}
+                        <span class="duration-badge">${formatDuration(v.duration)}</span>
+                        <div class="play-overlay"><span class="play-icon">▶</span></div>
+                    </div>
+                    <div class="video-info">
+                        <h3 class="video-title" onclick="playVideo('${v.id}')" style="cursor:pointer">${escapeHtml(v.title)}</h3>
+                        <p class="video-channel">${escapeHtml(v.channel)}</p>
+                        <div class="video-meta">
+                            <span>${formatDate(v.date_added)}</span>
+                            <span>${v.view_count || 0} views</span>
+                        </div>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        function playVideo(id) {
+            const video = allVideos.find(v => v.id === id);
+            if (!video) return;
+
+            document.getElementById('modalTitle').textContent = video.title;
+            document.getElementById('modalChannel').textContent = video.channel;
+            const player = document.getElementById('videoPlayer');
+            player.src = '/videos/' + encodeURIComponent(video.id) + '.' + video.format;
+            player.play();
+            document.getElementById('playerModal').classList.remove('hidden');
+
+            fetch('/api/videos/' + id + '/view', { method: 'POST' });
+        }
+
+        document.getElementById('searchBtn').addEventListener('click', () => {
+            const q = document.getElementById('searchInput').value.trim();
+            fetchVideos(q);
+        });
+
+        document.getElementById('searchInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                fetchVideos(e.target.value.trim());
+            }
+        });
+
+        document.getElementById('clearBtn').addEventListener('click', () => {
+            document.getElementById('searchInput').value = '';
+            fetchVideos();
+        });
+
+        document.getElementById('modalClose').addEventListener('click', () => {
+            const player = document.getElementById('videoPlayer');
+            player.pause();
+            player.src = '';
+            document.getElementById('playerModal').classList.add('hidden');
+        });
+
+        document.getElementById('playerModal').addEventListener('click', (e) => {
+            if (e.target.id === 'playerModal') {
+                document.getElementById('modalClose').click();
+            }
+        });
+
+        function formatDuration(seconds) {
+            if (!seconds) return '0:00';
+            const h = Math.floor(seconds / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            const s = seconds % 60;
+            if (h > 0) {
+                return h + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+            }
+            return m + ':' + String(s).padStart(2, '0');
+        }
+
+        function formatDate(dateStr) {
+            const d = new Date(dateStr);
+            return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>

@@ -458,7 +458,7 @@
             if (!bytes) return '0 B';
             const unit = 1024;
             if (bytes < unit) return bytes + ' B';
-            const units = ['KB', 'MB', 'GB', 'TB', 'PB'];
+            const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
             let i = 0;
             let b = bytes;
             while (b >= unit && i < units.length - 1) {

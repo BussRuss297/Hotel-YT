@@ -22,8 +22,8 @@ WORKDIR /app
 # Copy the Go binary
 COPY --from=builder /app/hotel-server .
 
-# Create data directory and set ownership
-RUN mkdir -p /app/data && chown -R hotel:hotel /app
+# Create data directory
+RUN mkdir -p /app/data
 
 # Copy static assets and templates (served from embed, already in binary, 
 # but keeping for clarity and potential future use)

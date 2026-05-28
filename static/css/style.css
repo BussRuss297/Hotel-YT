@@ -34,6 +34,11 @@ body {
     padding: 2rem;
 }
 
+.container.full-width {
+    max-width: none;
+    margin: 0;
+}
+
 /* Page Header */
 .page-header {
     margin-bottom: 2rem;
@@ -465,10 +470,46 @@ body {
 /* Inline Player Section */
 .player-section {
     background: var(--bg-card);
+    border-radius: 0;
+    padding: 0;
+    margin-bottom: 2rem;
+    border: none;
+}
+
+.player-section.full-width-player {
+    border-radius: 0;
+    padding: 0;
+    margin-left: -2rem;
+    margin-right: -2rem;
+    width: calc(100% + 4rem);
+    border: none;
+    background: #000;
+}
+
+.player-section.constrained-player {
     border-radius: 12px;
     padding: 1.5rem;
-    margin-bottom: 2rem;
+    margin-left: 0;
+    margin-right: 0;
+    width: auto;
     border: 1px solid var(--border);
+    background: var(--bg-card);
+}
+
+.player-section.constrained-player .player-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 1rem;
+}
+
+.player-section.full-width-player .player-header {
+    padding: 1rem 1.5rem 0;
+    margin-bottom: 0.5rem;
+}
+
+.player-section.full-width-player .player-controls {
+    padding: 0.25rem 1.5rem 0.75rem;
 }
 
 .player-header {
@@ -513,11 +554,21 @@ body {
 .video-wrapper {
     position: relative;
     width: 100%;
-    height: 55vh;
+    aspect-ratio: 16 / 9;
+    height: auto;
+    max-height: calc(100vh - 140px);
     background: #000;
-    border-radius: 8px;
+    border-radius: 0;
     overflow: hidden;
     line-height: 0;
+}
+
+.video-wrapper.constrained {
+    aspect-ratio: auto;
+    height: 55vh;
+    border-radius: 8px;
+    max-width: 1100px;
+    margin: 0 auto;
 }
 
 .video-player {
@@ -550,12 +601,39 @@ body {
     width: 100%;
 }
 
+.speed-buttons {
+    display: flex;
+    gap: 0;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+}
+
 .speed-btn {
-    width: auto;
-    min-width: 44px;
-    padding: 0 0.5rem;
-    font-size: 0.95rem;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.85rem;
     font-weight: 600;
+    background: none;
+    border: none;
+    border-right: 1px solid var(--border);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s;
+    min-width: 44px;
+}
+
+.speed-btn:last-child {
+    border-right: none;
+}
+
+.speed-btn:hover {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+}
+
+.speed-btn.active {
+    background: var(--accent);
+    color: white;
 }
 
 .controls-spacer {
@@ -588,9 +666,9 @@ body {
     flex: 1;
     -webkit-appearance: none;
     appearance: none;
-    height: 8px;
+    height: 16px;
     background: var(--border);
-    border-radius: 4px;
+    border-radius: 8px;
     outline: none;
     cursor: pointer;
     min-width: 80px;
@@ -599,8 +677,8 @@ body {
 .progress-bar::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
-    width: 18px;
-    height: 18px;
+    width: 22px;
+    height: 22px;
     border-radius: 50%;
     background: var(--accent);
     cursor: pointer;
@@ -608,8 +686,8 @@ body {
 }
 
 .progress-bar::-moz-range-thumb {
-    width: 18px;
-    height: 18px;
+    width: 22px;
+    height: 22px;
     border-radius: 50%;
     background: var(--accent);
     cursor: pointer;

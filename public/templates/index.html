@@ -32,8 +32,13 @@
                     <button id="muteBtn" class="control-btn" title="Mute/Unmute">🔊</button>
                     <input type="range" id="volumeBar" class="volume-bar" value="100" min="0" max="100">
                 </div>
-                <button id="speedBtn" class="control-btn speed-btn" title="Playback Speed">1×</button>
+                <div class="speed-buttons">
+                    <button id="speed1Btn" class="speed-btn active" data-speed="1">1×</button>
+                    <button id="speed15Btn" class="speed-btn" data-speed="1.5">1.5×</button>
+                    <button id="speed2Btn" class="speed-btn" data-speed="2">2×</button>
+                </div>
                 <div class="controls-spacer"></div>
+                <button id="widthToggleBtn" class="control-btn" title="Toggle Full Width">↔</button>
                 <button id="fullscreenBtn" class="control-btn" title="Fullscreen">⛶</button>
             </div>
         </div>
@@ -144,9 +149,11 @@
         const timeDisplay = document.getElementById('timeDisplay');
         const muteBtn = document.getElementById('muteBtn');
         const volumeBar = document.getElementById('volumeBar');
-        const speedBtn = document.getElementById('speedBtn');
         const fullscreenBtn = document.getElementById('fullscreenBtn');
+        const widthToggleBtn = document.getElementById('widthToggleBtn');
         const closePlayer = document.getElementById('closePlayer');
+        const container = document.querySelector('.container');
+        let isFullWidth = true;
 
         function playVideo(id) {
             const video = allVideos.find(v => v.id === id);
@@ -157,6 +164,8 @@
             document.getElementById('playerChannel').textContent = video.channel;
             player.src = '/videos/' + encodeURIComponent(video.id) + '.' + video.format;
             playerSection.classList.remove('hidden');
+            playerSection.classList.add('full-width-player');
+            container.classList.add('full-width');
             player.play();
             playPauseBtn.textContent = '⏸';
             renderVideos(allVideos);
@@ -169,6 +178,9 @@
             player.src = '';
             currentVideoId = null;
             playerSection.classList.add('hidden');
+            playerSection.classList.remove('full-width-player', 'constrained-player');
+            container.classList.remove('full-width');
+            isFullWidth = true;
             progressBar.value = 0;
             timeDisplay.textContent = '0:00 / 0:00';
             playPauseBtn.textContent = '▶';
@@ -225,14 +237,46 @@
             muteBtn.textContent = player.volume === 0 ? '🔇' : '🔊';
         });
 
-        const speeds = [1, 1.5, 2];
-        let speedIdx = 0;
-
-        speedBtn.addEventListener('click', () => {
-            speedIdx = (speedIdx + 1) % speeds.length;
-            const speed = speeds[speedIdx];
+        // Speed buttons
+        function setSpeed(speed, activeBtn) {
             player.playbackRate = speed;
-            speedBtn.textContent = speed + '×';
+            document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
+            activeBtn.classList.add('active');
+        }
+
+        document.getElementById('speed1Btn').addEventListener('click', function() {
+            setSpeed(1, this);
+        });
+        document.getElementById('speed15Btn').addEventListener('click', function() {
+            setSpeed(1.5, this);
+        });
+        document.getElementById('speed2Btn').addEventListener('click', function() {
+            setSpeed(2, this);
+        });
+
+        function applyPlayerWidth(full) {
+            if (full) {
+                playerSection.classList.add('full-width-player');
+                playerSection.classList.remove('constrained-player');
+                container.classList.add('full-width');
+                const wrapper = document.querySelector('.video-wrapper');
+                wrapper.classList.remove('constrained');
+                widthToggleBtn.textContent = '↔';
+                isFullWidth = true;
+            } else {
+                playerSection.classList.remove('full-width-player');
+                playerSection.classList.add('constrained-player');
+                container.classList.remove('full-width');
+                const wrapper = document.querySelector('.video-wrapper');
+                wrapper.classList.add('constrained');
+                widthToggleBtn.textContent = '↕';
+                isFullWidth = false;
+            }
+        }
+
+        widthToggleBtn.addEventListener('click', () => {
+            isFullWidth = !isFullWidth;
+            applyPlayerWidth(isFullWidth);
         });
 
         fullscreenBtn.addEventListener('click', () => {

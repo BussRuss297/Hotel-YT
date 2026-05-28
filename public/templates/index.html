@@ -4,19 +4,38 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Video Library</title>
-    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/style.css?v=2">
 </head>
 <body>
-    <nav class="navbar">
-        <div class="navbar-brand">
-            <a href="/">📺 Video Library</a>
-        </div>
-    </nav>
-
     <div class="container">
-        <div class="page-header">
-            <h1>Video Library</h1>
-            <p>Browse and watch our collection of videos</p>
+        <!-- Inline Video Player -->
+        <div id="playerSection" class="player-section hidden">
+            <div class="player-header">
+                <div class="player-info">
+                    <h2 id="playerTitle"></h2>
+                    <p id="playerChannel" class="player-channel"></p>
+                </div>
+                <button id="closePlayer" class="btn-close-player" title="Close player">&times;</button>
+            </div>
+            <div class="video-wrapper">
+                <video id="videoPlayer" class="video-player" preload="metadata">
+                    Your browser does not support the video element.
+                </video>
+            </div>
+            <div class="progress-row">
+                <input type="range" id="progressBar" class="progress-bar" value="0" min="0" max="1000" step="1">
+            </div>
+            <div class="player-controls">
+                <button id="playPauseBtn" class="control-btn" title="Play/Pause">▶</button>
+                <span id="timeDisplay" class="time-display">0:00 / 0:00</span>
+                <div class="volume-control">
+                    <button id="muteBtn" class="control-btn" title="Mute/Unmute">🔊</button>
+                    <input type="range" id="volumeBar" class="volume-bar" value="100" min="0" max="100">
+                </div>
+                <button id="speedBtn" class="control-btn speed-btn" title="Playback Speed">1×</button>
+                <div class="controls-spacer"></div>
+                <button id="fullscreenBtn" class="control-btn" title="Fullscreen">⛶</button>
+            </div>
         </div>
 
         <div class="search-bar">
@@ -41,21 +60,10 @@
         </div>
     </div>
 
-    <!-- Video Player Modal -->
-    <div id="playerModal" class="modal hidden">
-        <div class="modal-content modal-large">
-            <span class="modal-close" id="modalClose">&times;</span>
-            <h2 id="modalTitle"></h2>
-            <p id="modalChannel" class="modal-channel"></p>
-            <video id="videoPlayer" controls class="video-player-full">
-                Your browser does not support the video element.
-            </video>
-        </div>
-    </div>
-
     <script src="/static/js/app.js"></script>
     <script>
         let allVideos = [];
+        let currentVideoId = null;
 
         document.addEventListener('DOMContentLoaded', () => {
             fetchVideos();
@@ -102,7 +110,10 @@
         function renderVideos(videos) {
             const grid = document.getElementById('videoGrid');
             grid.innerHTML = '';
-            videos.forEach(v => {
+            const filteredVideos = currentVideoId
+                ? videos.filter(v => v.id !== currentVideoId)
+                : videos;
+            filteredVideos.forEach(v => {
                 const card = document.createElement('div');
                 card.className = 'video-card';
                 card.innerHTML = `
@@ -124,19 +135,163 @@
             });
         }
 
+        // ---- Custom Video Player Logic ----
+
+        const player = document.getElementById('videoPlayer');
+        const playerSection = document.getElementById('playerSection');
+        const playPauseBtn = document.getElementById('playPauseBtn');
+        const progressBar = document.getElementById('progressBar');
+        const timeDisplay = document.getElementById('timeDisplay');
+        const muteBtn = document.getElementById('muteBtn');
+        const volumeBar = document.getElementById('volumeBar');
+        const speedBtn = document.getElementById('speedBtn');
+        const fullscreenBtn = document.getElementById('fullscreenBtn');
+        const closePlayer = document.getElementById('closePlayer');
+
         function playVideo(id) {
             const video = allVideos.find(v => v.id === id);
             if (!video) return;
 
-            document.getElementById('modalTitle').textContent = video.title;
-            document.getElementById('modalChannel').textContent = video.channel;
-            const player = document.getElementById('videoPlayer');
+            currentVideoId = id;
+            document.getElementById('playerTitle').textContent = video.title;
+            document.getElementById('playerChannel').textContent = video.channel;
             player.src = '/videos/' + encodeURIComponent(video.id) + '.' + video.format;
+            playerSection.classList.remove('hidden');
             player.play();
-            document.getElementById('playerModal').classList.remove('hidden');
+            playPauseBtn.textContent = '⏸';
+            renderVideos(allVideos);
 
             fetch('/api/videos/' + id + '/view', { method: 'POST' });
         }
+
+        function closePlayerAndReset() {
+            player.pause();
+            player.src = '';
+            currentVideoId = null;
+            playerSection.classList.add('hidden');
+            progressBar.value = 0;
+            timeDisplay.textContent = '0:00 / 0:00';
+            playPauseBtn.textContent = '▶';
+            renderVideos(allVideos);
+        }
+
+        closePlayer.addEventListener('click', closePlayerAndReset);
+
+        playPauseBtn.addEventListener('click', () => {
+            if (player.paused) {
+                player.play();
+                playPauseBtn.textContent = '⏸';
+            } else {
+                player.pause();
+                playPauseBtn.textContent = '▶';
+            }
+        });
+
+        player.addEventListener('click', () => {
+            if (player.paused) {
+                player.play();
+                playPauseBtn.textContent = '⏸';
+            } else {
+                player.pause();
+                playPauseBtn.textContent = '▶';
+            }
+        });
+
+        player.addEventListener('timeupdate', () => {
+            if (player.duration) {
+                progressBar.value = (player.currentTime / player.duration) * 1000;
+                timeDisplay.textContent = formatTime(player.currentTime) + ' / ' + formatTime(player.duration);
+            }
+        });
+
+        player.addEventListener('loadedmetadata', () => {
+            timeDisplay.textContent = '0:00 / ' + formatTime(player.duration);
+        });
+
+        progressBar.addEventListener('input', () => {
+            const seekTime = (progressBar.value / 1000) * player.duration;
+            player.currentTime = seekTime;
+        });
+
+        muteBtn.addEventListener('click', () => {
+            player.muted = !player.muted;
+            muteBtn.textContent = player.muted ? '🔇' : '🔊';
+            volumeBar.value = player.muted ? 0 : Math.round(player.volume * 100);
+        });
+
+        volumeBar.addEventListener('input', () => {
+            player.volume = volumeBar.value / 100;
+            player.muted = false;
+            muteBtn.textContent = player.volume === 0 ? '🔇' : '🔊';
+        });
+
+        const speeds = [1, 1.5, 2];
+        let speedIdx = 0;
+
+        speedBtn.addEventListener('click', () => {
+            speedIdx = (speedIdx + 1) % speeds.length;
+            const speed = speeds[speedIdx];
+            player.playbackRate = speed;
+            speedBtn.textContent = speed + '×';
+        });
+
+        fullscreenBtn.addEventListener('click', () => {
+            if (document.fullscreenElement) {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                } else if (document.webkitExitFullscreen) {
+                    document.webkitExitFullscreen();
+                }
+            } else {
+                if (playerSection.requestFullscreen) {
+                    playerSection.requestFullscreen();
+                } else if (playerSection.webkitRequestFullscreen) {
+                    playerSection.webkitRequestFullscreen();
+                } else if (playerSection.msRequestFullscreen) {
+                    playerSection.msRequestFullscreen();
+                }
+            }
+        });
+
+        document.addEventListener('fullscreenchange', () => {
+            const wrapper = document.querySelector('.video-wrapper');
+            if (document.fullscreenElement) {
+                wrapper.style.height = 'calc(100vh - 120px)';
+                wrapper.style.maxHeight = 'none';
+                playerSection.style.display = 'flex';
+                playerSection.style.flexDirection = 'column';
+                playerSection.style.height = '100vh';
+                playerSection.style.padding = '1rem';
+                playerSection.style.background = '#000';
+                playerSection.style.borderRadius = '0';
+                playerSection.style.border = 'none';
+                fullscreenBtn.textContent = '⛶';
+            } else {
+                wrapper.style.height = '';
+                wrapper.style.maxHeight = '';
+                playerSection.style.display = '';
+                playerSection.style.flexDirection = '';
+                playerSection.style.height = '';
+                playerSection.style.padding = '';
+                playerSection.style.background = '';
+                playerSection.style.borderRadius = '';
+                playerSection.style.border = '';
+                fullscreenBtn.textContent = '⛶';
+            }
+        });
+
+        function formatTime(seconds) {
+            if (!seconds || isNaN(seconds)) return '0:00';
+            const h = Math.floor(seconds / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            const s = Math.floor(seconds % 60);
+            if (h > 0) {
+                return h + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+            }
+            return m + ':' + String(s).padStart(2, '0');
+        }
+
+        // ---- Search ----
 
         document.getElementById('searchBtn').addEventListener('click', () => {
             const q = document.getElementById('searchInput').value.trim();
@@ -152,19 +307,6 @@
         document.getElementById('clearBtn').addEventListener('click', () => {
             document.getElementById('searchInput').value = '';
             fetchVideos();
-        });
-
-        document.getElementById('modalClose').addEventListener('click', () => {
-            const player = document.getElementById('videoPlayer');
-            player.pause();
-            player.src = '';
-            document.getElementById('playerModal').classList.add('hidden');
-        });
-
-        document.getElementById('playerModal').addEventListener('click', (e) => {
-            if (e.target.id === 'playerModal') {
-                document.getElementById('modalClose').click();
-            }
         });
 
         function formatDuration(seconds) {

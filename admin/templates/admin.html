@@ -7,15 +7,6 @@
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
-    <nav class="navbar">
-        <div class="navbar-brand">
-            <a href="/">📺 Video Library</a>
-        </div>
-        <div class="navbar-links">
-            <a href="/admin" class="active">Admin Dashboard</a>
-        </div>
-    </nav>
-
     <div class="container">
         <div class="page-header">
             <h1>Admin Dashboard</h1>
@@ -28,6 +19,32 @@
             <form id="downloadForm" class="download-form">
                 <div class="form-group">
                     <input type="url" id="videoUrl" placeholder="Paste YouTube URL here..." required />
+                </div>
+                <div class="form-params hidden" id="formParams">
+                    <div class="param-group">
+                        <label>Resolution</label>
+                        <div class="param-buttons" id="resolutionGroup">
+                            <button type="button" class="param-btn active" data-value="0">Highest</button>
+                            <button type="button" class="param-btn" data-value="2160">4K</button>
+                            <button type="button" class="param-btn" data-value="1440">1440p</button>
+                            <button type="button" class="param-btn" data-value="1080">1080p</button>
+                            <button type="button" class="param-btn" data-value="720">720p</button>
+                            <button type="button" class="param-btn" data-value="480">480p</button>
+                            <button type="button" class="param-btn" data-value="360">360p</button>
+                        </div>
+                    </div>
+                    <div class="param-group" id="vcodecGroupWrapper">
+                        <label>Video Codec</label>
+                        <div class="param-buttons" id="vcodecGroup">
+                            <!-- Populated dynamically after fetch -->
+                        </div>
+                    </div>
+                    <div class="param-group" id="acodecGroupWrapper">
+                        <label>Audio Codec</label>
+                        <div class="param-buttons" id="acodecGroup">
+                            <!-- Populated dynamically after fetch -->
+                        </div>
+                    </div>
                 </div>
                 <div class="form-actions">
                     <button type="button" id="fetchInfoBtn" class="btn-info">Fetch Info</button>
@@ -54,6 +71,26 @@
                 </div>
                 <div id="consoleOutput" class="console-output"></div>
             </div>
+        </div>
+
+        <!-- Manual Upload Section -->
+        <div class="download-section">
+            <h2>Manual Upload</h2>
+            <form id="uploadForm" class="download-form" enctype="multipart/form-data">
+                <div class="form-group">
+                    <input type="file" id="uploadFileInput" accept="video/*" required />
+                </div>
+                <div class="form-group">
+                    <input type="text" id="uploadTitle" placeholder="Video title" required />
+                </div>
+                <div class="form-group">
+                    <input type="text" id="uploadChannel" placeholder="Channel name" required />
+                </div>
+                <div id="uploadStatus" class="upload-status hidden"></div>
+                <div class="form-actions">
+                    <button type="submit" id="uploadBtn">Upload</button>
+                </div>
+            </form>
         </div>
 
         <!-- Message Toast -->
@@ -124,7 +161,45 @@
 
         document.addEventListener('DOMContentLoaded', () => {
             fetchVideos();
+
+            // Setup param button groups — clicking selects and highlights
+            document.querySelectorAll('.param-buttons').forEach(group => {
+                group.addEventListener('click', (e) => {
+                    const btn = e.target.closest('.param-btn');
+                    if (!btn) return;
+                    group.querySelectorAll('.param-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                });
+            });
         });
+
+        // Helper: get selected value from a button group
+        function getParamValue(groupId) {
+            const active = document.querySelector('#' + groupId + ' .param-btn.active');
+            return active ? active.dataset.value : '';
+        }
+
+        // Populate a codec button group dynamically from options
+        function populateCodecGroup(groupId, options, defaultVal) {
+            const group = document.getElementById(groupId);
+            if (!group) return;
+            group.innerHTML = '';
+            options.forEach((opt, i) => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'param-btn';
+                if (opt.value === defaultVal) {
+                    btn.classList.add('active');
+                }
+                btn.dataset.value = opt.value;
+                btn.textContent = opt.label;
+                group.appendChild(btn);
+            });
+            // If no default matched, activate the first
+            if (!group.querySelector('.param-btn.active') && group.firstChild) {
+                group.firstChild.classList.add('active');
+            }
+        }
 
         // Toast notification
         function showToast(message, isError = false) {
@@ -194,6 +269,13 @@
                     document.getElementById('previewThumbnail').src = data.thumbnail;
                 }
 
+                // Populate codec button groups from server-provided options
+                populateCodecGroup('vcodecGroup', data.vcodec_options || [], 'avc1');
+                populateCodecGroup('acodecGroup', data.acodec_options || [], 'mp4a');
+
+                // Show the form params
+                document.getElementById('formParams').classList.remove('hidden');
+
                 preview.classList.remove('hidden');
                 document.getElementById('downloadBtn').disabled = false;
                 document.getElementById('fetchInfoBtn').disabled = false;
@@ -238,10 +320,19 @@
             eventSource.close();
 
             try {
+                const resolution = getParamValue('resolutionGroup');
+                const vcodec = getParamValue('vcodecGroup');
+                const acodec = getParamValue('acodecGroup');
+
                 const resp = await fetch('/api/admin/download', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ url: url })
+                    body: JSON.stringify({
+                        url: url,
+                        resolution: parseInt(resolution) || 0,
+                        vcodec: vcodec,
+                        acodec: acodec
+                    })
                 });
 
                 if (!resp.ok) {
@@ -435,6 +526,68 @@
         document.getElementById('adminClearBtn').addEventListener('click', () => {
             document.getElementById('adminSearchInput').value = '';
             fetchVideos();
+        });
+
+        // Manual upload
+        document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const fileInput = document.getElementById('uploadFileInput');
+            const titleInput = document.getElementById('uploadTitle');
+            const channelInput = document.getElementById('uploadChannel');
+            const uploadStatus = document.getElementById('uploadStatus');
+            const uploadBtn = document.getElementById('uploadBtn');
+
+            const file = fileInput.files[0];
+            if (!file) {
+                showToast('Please select a video file', true);
+                return;
+            }
+            if (!titleInput.value.trim()) {
+                showToast('Please enter a title', true);
+                return;
+            }
+            if (!channelInput.value.trim()) {
+                showToast('Please enter a channel name', true);
+                return;
+            }
+
+            uploadBtn.disabled = true;
+            uploadStatus.classList.remove('hidden');
+            uploadStatus.innerHTML = '<div class="spinner small-spinner"></div> Uploading...';
+
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('title', titleInput.value.trim());
+            formData.append('channel', channelInput.value.trim());
+
+            try {
+                const resp = await fetch('/api/admin/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    showToast(err.error || 'Upload failed', true);
+                    uploadStatus.innerHTML = '<span class="text-error">Upload failed: ' + (err.error || 'unknown error') + '</span>';
+                    return;
+                }
+
+                const result = await resp.json();
+                showToast('Video uploaded successfully!');
+                uploadStatus.innerHTML = '<span class="text-success">Upload complete: ' + escapeHtml(result.title) + '</span>';
+                fileInput.value = '';
+                titleInput.value = '';
+                channelInput.value = '';
+                fetchVideos();
+            } catch (err) {
+                console.error(err);
+                showToast('Network error during upload', true);
+                uploadStatus.innerHTML = '<span class="text-error">Network error</span>';
+            } finally {
+                uploadBtn.disabled = false;
+            }
         });
 
         // Helpers

@@ -265,6 +265,65 @@ body {
     border-color: var(--accent);
 }
 
+/* Form param button groups */
+.form-params {
+    display: flex;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
+}
+
+.param-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.param-group label {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.param-buttons {
+    display: flex;
+}
+
+.param-btn {
+    padding: 0.4rem 0.6rem;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    cursor: pointer;
+    font-size: 0.75rem;
+    border-right: none;
+    transition: background 0.15s;
+}
+
+.param-btn:first-child {
+    border-radius: 4px 0 0 4px;
+}
+
+.param-btn:last-child {
+    border-radius: 0 4px 4px 0;
+    border-right: 1px solid var(--border);
+}
+
+.param-btn:hover {
+    background: var(--bg-secondary);
+}
+
+.param-btn.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+}
+
+.param-btn.active + .param-btn {
+    border-left-color: var(--accent);
+}
+
 .form-actions {
     display: flex;
     gap: 1rem;
@@ -472,7 +531,7 @@ body {
     background: var(--bg-card);
     border-radius: 0;
     padding: 0;
-    margin-bottom: 2rem;
+    margin-bottom: 0;
     border: none;
 }
 
@@ -488,7 +547,7 @@ body {
 
 .player-section.constrained-player {
     border-radius: 12px;
-    padding: 1.5rem;
+    padding: 0;
     margin-left: 0;
     margin-right: 0;
     width: auto;
@@ -508,8 +567,20 @@ body {
     margin-bottom: 0.5rem;
 }
 
+.video-header-bar {
+    display: flex;
+    justify-content: flex-end;
+    padding: 0.25rem 0.5rem;
+    background: #000;
+}
+
+.constrained-player .video-header-bar {
+    padding: 0.5rem 1rem;
+    background: var(--bg-card);
+}
+
 .player-section.full-width-player .player-controls {
-    padding: 0.25rem 1.5rem 0.75rem;
+    padding: 0.25rem 1.5rem 0.25rem;
 }
 
 .player-header {
@@ -517,6 +588,18 @@ body {
     justify-content: space-between;
     align-items: flex-start;
     margin-bottom: 1rem;
+}
+
+.player-info {
+    padding: 1rem 1.5rem;
+}
+
+.player-section.full-width-player .player-info {
+    background: var(--bg-card);
+}
+
+.constrained-player .player-info {
+    background: var(--bg-card);
 }
 
 .player-info h2 {
@@ -531,11 +614,11 @@ body {
 
 .btn-close-player {
     background: none;
-    border: 1px solid var(--border);
-    color: var(--text-secondary);
-    font-size: 1.5rem;
-    width: 44px;
-    height: 44px;
+    border: 1px solid rgba(255,255,255,0.2);
+    color: rgba(255,255,255,0.6);
+    font-size: 1.2rem;
+    width: 36px;
+    height: 36px;
     border-radius: 50%;
     cursor: pointer;
     display: flex;
@@ -666,9 +749,9 @@ body {
     flex: 1;
     -webkit-appearance: none;
     appearance: none;
-    height: 16px;
+    height: 32px;
     background: var(--border);
-    border-radius: 8px;
+    border-radius: 16px;
     outline: none;
     cursor: pointer;
     min-width: 80px;
@@ -677,8 +760,8 @@ body {
 .progress-bar::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
-    width: 22px;
-    height: 22px;
+    width: 36px;
+    height: 36px;
     border-radius: 50%;
     background: var(--accent);
     cursor: pointer;
@@ -686,8 +769,8 @@ body {
 }
 
 .progress-bar::-moz-range-thumb {
-    width: 22px;
-    height: 22px;
+    width: 36px;
+    height: 36px;
     border-radius: 50%;
     background: var(--accent);
     cursor: pointer;

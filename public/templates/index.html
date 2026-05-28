@@ -10,11 +10,7 @@
     <div class="container">
         <!-- Inline Video Player -->
         <div id="playerSection" class="player-section hidden">
-            <div class="player-header">
-                <div class="player-info">
-                    <h2 id="playerTitle"></h2>
-                    <p id="playerChannel" class="player-channel"></p>
-                </div>
+            <div class="video-header-bar">
                 <button id="closePlayer" class="btn-close-player" title="Close player">&times;</button>
             </div>
             <div class="video-wrapper">
@@ -40,6 +36,10 @@
                 <div class="controls-spacer"></div>
                 <button id="widthToggleBtn" class="control-btn" title="Toggle Full Width">↔</button>
                 <button id="fullscreenBtn" class="control-btn" title="Fullscreen">⛶</button>
+            </div>
+            <div class="player-info">
+                <h2 id="playerTitle"></h2>
+                <p id="playerChannel" class="player-channel"></p>
             </div>
         </div>
 
@@ -71,10 +71,21 @@
         let currentVideoId = null;
 
         document.addEventListener('DOMContentLoaded', () => {
-            fetchVideos();
+            const params = new URLSearchParams(window.location.search);
+            const vidFromUrl = params.get('v');
+
+            fetchVideos('', () => {
+                if (vidFromUrl) {
+                    // Auto-play video from URL param on initial load
+                    const video = allVideos.find(v => v.id === vidFromUrl);
+                    if (video) {
+                        playVideo(video.id);
+                    }
+                }
+            });
         });
 
-        function fetchVideos(query = '') {
+        function fetchVideos(query = '', callback) {
             const loading = document.getElementById('loading');
             const grid = document.getElementById('videoGrid');
             const noResults = document.getElementById('noResults');
@@ -103,6 +114,7 @@
                         renderVideos(allVideos);
                     }
                     document.getElementById('videoCount').textContent = allVideos.length + ' video' + (allVideos.length !== 1 ? 's' : '') + ' found';
+                    if (callback) callback();
                 })
                 .catch(err => {
                     console.error('Error fetching videos:', err);
@@ -170,6 +182,11 @@
             playPauseBtn.textContent = '⏸';
             renderVideos(allVideos);
 
+            // Update URL
+            const url = new URL(window.location);
+            url.searchParams.set('v', id);
+            window.history.pushState({ videoId: id }, '', url);
+
             fetch('/api/videos/' + id + '/view', { method: 'POST' });
         }
 
@@ -185,7 +202,23 @@
             timeDisplay.textContent = '0:00 / 0:00';
             playPauseBtn.textContent = '▶';
             renderVideos(allVideos);
+
+            // Clear video param from URL
+            const url = new URL(window.location);
+            url.searchParams.delete('v');
+            window.history.pushState({}, '', url);
         }
+
+        // Handle back/forward navigation
+        window.addEventListener('popstate', (e) => {
+            const params = new URLSearchParams(window.location.search);
+            const vid = params.get('v');
+            if (vid) {
+                playVideo(vid);
+            } else {
+                closePlayerAndReset();
+            }
+        });
 
         closePlayer.addEventListener('click', closePlayerAndReset);
 

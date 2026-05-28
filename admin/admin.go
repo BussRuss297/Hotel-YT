@@ -2,9 +2,12 @@ package admin
 
 import (
 	"bufio"
+	"crypto/rand"
 	"embed"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -34,9 +37,13 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/admin/info", h.handleInfo)
 	mux.HandleFunc("POST /api/admin/download", h.handleDownload)
 	mux.HandleFunc("DELETE /api/admin/videos/{id}", h.handleDelete)
+	mux.HandleFunc("POST /api/admin/upload", h.handleUpload)
 }
 
 func (h *Handler) handleAdmin(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
 	http.ServeFileFS(w, r, templatesFS, "templates/admin.html")
 }
 
@@ -47,19 +54,22 @@ func (h *Handler) handleInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	video, err := h.download.GetInfo(url)
+	info, err := h.download.GetInfoWithCodecs(url)
 	if err != nil {
 		h.jsonError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(video)
+	json.NewEncoder(w).Encode(info)
 }
 
 func (h *Handler) handleDownload(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		URL string `json:"url"`
+		URL        string `json:"url"`
+		Resolution int    `json:"resolution"`
+		Vcodec     string `json:"vcodec"`
+		Acodec     string `json:"acodec"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		h.jsonError(w, "invalid request body", http.StatusBadRequest)
@@ -109,8 +119,12 @@ func (h *Handler) handleDownload(w http.ResponseWriter, r *http.Request) {
 	videoDir := h.download.GetVideoDir()
 	outputTemplate := filepath.Join(videoDir, "%(id)s.%(ext)s")
 
+	// Build format selector from user-selected params
+	formatSelector := buildFormatSelector(req.Resolution, req.Vcodec, req.Acodec)
+	sendLine("Format selector: "+formatSelector, "info")
+
 	args := []string{
-		"-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+		"-f", formatSelector,
 		"--merge-output-format", "mp4",
 		"-o", outputTemplate,
 		"--no-playlist",
@@ -266,6 +280,86 @@ func (h *Handler) jsonError(w http.ResponseWriter, msg string, status int) {
 	json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }
 
+func (h *Handler) handleUpload(w http.ResponseWriter, r *http.Request) {
+	// Limit upload size to 10GB
+	r.Body = http.MaxBytesReader(w, r.Body, 10<<30)
+
+	if err := r.ParseMultipartForm(100 << 20); err != nil {
+		h.jsonError(w, "file too large or invalid form", http.StatusBadRequest)
+		return
+	}
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		h.jsonError(w, "missing file", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	title := strings.TrimSpace(r.FormValue("title"))
+	channel := strings.TrimSpace(r.FormValue("channel"))
+
+	if title == "" {
+		h.jsonError(w, "title is required", http.StatusBadRequest)
+		return
+	}
+	if channel == "" {
+		h.jsonError(w, "channel is required", http.StatusBadRequest)
+		return
+	}
+
+	// Generate a unique ID
+	idBytes := make([]byte, 8)
+	rand.Read(idBytes)
+	id := hex.EncodeToString(idBytes)
+
+	// Get file extension
+	ext := strings.ToLower(filepath.Ext(header.Filename))
+	if ext == "" {
+		ext = ".mp4"
+	}
+
+	videoDir := h.download.GetVideoDir()
+	savePath := filepath.Join(videoDir, id+ext)
+
+	// Create destination file
+	dst, err := os.Create(savePath)
+	if err != nil {
+		h.jsonError(w, "failed to create file", http.StatusInternalServerError)
+		return
+	}
+	defer dst.Close()
+
+	written, err := io.Copy(dst, file)
+	if err != nil {
+		os.Remove(savePath)
+		h.jsonError(w, "failed to write file", http.StatusInternalServerError)
+		return
+	}
+
+	video := store.Video{
+		ID:        id,
+		Title:     title,
+		Channel:   channel,
+		FilePath:  savePath,
+		Duration:  0,
+		FileSize:  written,
+		Format:    strings.TrimPrefix(ext, "."),
+		DateAdded: time.Now(),
+		ViewCount: 0,
+	}
+
+	if err := h.store.Add(video); err != nil {
+		os.Remove(savePath)
+		h.jsonError(w, "failed to save video metadata", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(video)
+}
+
 func formatFileSize(bytes int64) string {
 	const unit = 1024
 	if bytes < unit {
@@ -277,6 +371,45 @@ func formatFileSize(bytes int64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.2f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
+}
+
+// buildFormatSelector constructs a yt-dlp -f selector from user params.
+// resolution=0 means highest; >0 caps video height to that value.
+func buildFormatSelector(resolution int, vcodec, acodec string) string {
+	// Build the height constraint
+	heightFilter := ""
+	if resolution > 0 {
+		heightFilter = fmt.Sprintf("[height<=%d]", resolution)
+	}
+
+	vcFilter := ""
+	if vcodec != "" {
+		vcFilter = "[codec^=" + vcodec + "]"
+	}
+	acFilter := ""
+	if acodec != "" {
+		acFilter = "[codec^=" + acodec + "]"
+	}
+
+	// Build selectors preferring merged bestvideo+bestaudio over pre-muxed formats
+	// Fallback chain: ideal codecs > bestvideo with codec + any audio > any video + bestaudio with codec > best merged
+	parts := []string{}
+	if vcFilter != "" || acFilter != "" {
+		// 1st: exact codecs match via merging
+		parts = append(parts, "bestvideo"+heightFilter+vcFilter+"+bestaudio"+acFilter)
+		// 2nd: video codec match + any best audio
+		if vcFilter != "" {
+			parts = append(parts, "bestvideo"+heightFilter+vcFilter+"+bestaudio")
+		}
+		// 3rd: any best video + audio codec match
+		if acFilter != "" {
+			parts = append(parts, "bestvideo"+heightFilter+"+bestaudio"+acFilter)
+		}
+	}
+	// Final fallback: best merged video+audio
+	parts = append(parts, "bestvideo"+heightFilter+"+bestaudio/best"+heightFilter)
+
+	return strings.Join(parts, "/")
 }
 
 func init() {

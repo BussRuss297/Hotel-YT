@@ -21,40 +21,66 @@ func NewDownloader(videoDir string) *Downloader {
 }
 
 type ytDlpInfo struct {
-	ID          string `json:"id"`
-	Title       string `json:"title"`
-	Channel     string `json:"channel"`
-	Uploader    string `json:"uploader"`
-	Thumbnail   string `json:"thumbnail"`
-	Duration    int    `json:"duration"`
-	Format      string `json:"format"`
-	FilePath    string `json:"filepath"`
-	FileName    string `json:"filename"`
+	ID          string        `json:"id"`
+	Title       string        `json:"title"`
+	Channel     string        `json:"channel"`
+	Uploader    string        `json:"uploader"`
+	Thumbnail   string        `json:"thumbnail"`
+	Duration    int           `json:"duration"`
+	Format      string        `json:"format"`
+	FilePath    string        `json:"filepath"`
+	FileName    string        `json:"filename"`
+	Formats     []ytDlpFormat `json:"formats"`
+}
+
+type ytDlpFormat struct {
+	FormatID   string `json:"format_id"`
+	Vcodec     string `json:"vcodec"`
+	Acodec     string `json:"acodec"`
+	Resolution string `json:"resolution"`
+	Height     int    `json:"height"`
+}
+
+// VideoInfo wraps a Video with available codec/resolution info for the admin UI.
+type VideoInfo struct {
+	*store.Video
+	VcodecOptions []CodecOption `json:"vcodec_options"`
+	AcodecOptions []CodecOption `json:"acodec_options"`
+}
+
+type CodecOption struct {
+	Value string `json:"value"`
+	Label string `json:"label"`
+}
+
+// codecFamily maps yt-dlp vcodec/acodec prefix to display info.
+var vcodecFamilies = []struct {
+	prefix string
+	value  string
+	label  string
+}{
+	{"avc1", "avc1", "H.264"},
+	{"vp9", "vp9", "VP9"},
+	{"av01", "av01", "AV1"},
+	{"hvc1", "hvc1|hev1", "H.265"},
+	{"hev1", "hvc1|hev1", "H.265"},
+}
+
+var acodecFamilies = []struct {
+	prefix string
+	value  string
+	label  string
+}{
+	{"mp4a", "mp4a", "AAC"},
+	{"opus", "opus", "Opus"},
+	{"vorbis", "vorbis", "Vorbis"},
+	{"mp3", "mp3", "MP3"},
 }
 
 func (d *Downloader) GetInfo(url string) (*store.Video, error) {
-	cmd := exec.Command("yt-dlp", "--dump-json", "--no-warnings", url)
-	output, err := cmd.CombinedOutput()
+	info, err := d.fetchInfo(url)
 	if err != nil {
-		return nil, fmt.Errorf("yt-dlp info failed: %w, output: %s", err, string(output))
-	}
-
-	// yt-dlp may output multiple lines; find the one that's valid JSON (starts with {)
-	var jsonLine string
-	for _, line := range strings.Split(string(output), "\n") {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "{") {
-			jsonLine = trimmed
-			break
-		}
-	}
-	if jsonLine == "" {
-		return nil, fmt.Errorf("no JSON output from yt-dlp, raw output: %s", string(output))
-	}
-
-	var info ytDlpInfo
-	if err := json.Unmarshal([]byte(jsonLine), &info); err != nil {
-		return nil, fmt.Errorf("parsing yt-dlp info: %w, json line: %s", err, jsonLine)
+		return nil, err
 	}
 
 	channel := info.Channel
@@ -73,6 +99,99 @@ func (d *Downloader) GetInfo(url string) (*store.Video, error) {
 	}
 
 	return video, nil
+}
+
+func (d *Downloader) GetInfoWithCodecs(url string) (*VideoInfo, error) {
+	info, err := d.fetchInfo(url)
+	if err != nil {
+		return nil, err
+	}
+
+	channel := info.Channel
+	if channel == "" {
+		channel = info.Uploader
+	}
+
+	video := &store.Video{
+		ID:        info.ID,
+		Title:     info.Title,
+		Channel:   channel,
+		URL:       url,
+		Thumbnail: info.Thumbnail,
+		Duration:  info.Duration,
+		DateAdded: time.Now(),
+	}
+
+	return &VideoInfo{
+		Video:         video,
+		VcodecOptions: extractCodecOptions(info.Formats, true),
+		AcodecOptions: extractCodecOptions(info.Formats, false),
+	}, nil
+}
+
+func (d *Downloader) fetchInfo(url string) (*ytDlpInfo, error) {
+	cmd := exec.Command("yt-dlp", "--dump-json", "--no-warnings", url)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("yt-dlp info failed: %w, output: %s", err, string(output))
+	}
+
+	var jsonLine string
+	for _, line := range strings.Split(string(output), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "{") {
+			jsonLine = trimmed
+			break
+		}
+	}
+	if jsonLine == "" {
+		return nil, fmt.Errorf("no JSON output from yt-dlp, raw output: %s", string(output))
+	}
+
+	var info ytDlpInfo
+	if err := json.Unmarshal([]byte(jsonLine), &info); err != nil {
+		return nil, fmt.Errorf("parsing yt-dlp info: %w, json line: %s", err, jsonLine)
+	}
+
+	return &info, nil
+}
+
+func extractCodecOptions(formats []ytDlpFormat, isVideo bool) []CodecOption {
+	seen := make(map[string]bool)
+	var options []CodecOption
+	families := acodecFamilies
+	if isVideo {
+		families = vcodecFamilies
+	}
+
+	for _, f := range formats {
+		codecField := f.Acodec
+		if isVideo {
+			codecField = f.Vcodec
+		}
+		if codecField == "" || codecField == "none" {
+			continue
+		}
+		// Skip mhtml / storyboard formats
+		if strings.HasPrefix(f.FormatID, "sb") {
+			continue
+		}
+		// For video, skip audio-only and muxed formats where vcodec is unset
+		if isVideo && f.Height == 0 {
+			continue
+		}
+
+		for _, family := range families {
+			if strings.HasPrefix(codecField, family.prefix) {
+				if !seen[family.value] {
+					seen[family.value] = true
+					options = append(options, CodecOption{Value: family.value, Label: family.label})
+				}
+				break
+			}
+		}
+	}
+	return options
 }
 
 func (d *Downloader) Download(url string, video *store.Video) error {

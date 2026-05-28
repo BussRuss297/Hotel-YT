@@ -59,6 +59,13 @@ func main() {
 		http.StripPrefix("/videos/", http.FileServer(http.Dir(*videoDir))).ServeHTTP(w, r)
 	})
 
+	// Serve thumbnails from data/thumbnails
+	thumbDir := filepath.Join(*dataDir, "thumbnails")
+	os.MkdirAll(thumbDir, 0755)
+	mux.HandleFunc("GET /thumbnails/", func(w http.ResponseWriter, r *http.Request) {
+		http.StripPrefix("/thumbnails/", http.FileServer(http.Dir(thumbDir))).ServeHTTP(w, r)
+	})
+
 	// Start server
 	addr := *port
 	log.Printf("Server starting on http://localhost%s", addr)

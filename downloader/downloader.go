@@ -205,6 +205,7 @@ func (d *Downloader) Download(url string, video *store.Video) error {
 	args := []string{
 		"-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
 		"--merge-output-format", "mp4",
+		"--embed-thumbnail",
 		"-o", outputTemplate,
 		"--no-playlist",
 		"--restrict-filenames",

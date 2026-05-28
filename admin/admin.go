@@ -126,6 +126,7 @@ func (h *Handler) handleDownload(w http.ResponseWriter, r *http.Request) {
 	args := []string{
 		"-f", formatSelector,
 		"--merge-output-format", "mp4",
+		"--embed-thumbnail",
 		"-o", outputTemplate,
 		"--no-playlist",
 		"--restrict-filenames",
@@ -241,6 +242,18 @@ func (h *Handler) handleDownload(w http.ResponseWriter, r *http.Request) {
 	sendLine("Download complete: "+filePath, "info")
 	sendLine("File size: "+formatFileSize(video.FileSize), "info")
 
+	// Download and save thumbnail locally
+	if video.Thumbnail != "" {
+		sendLine("Downloading thumbnail...", "info")
+		thumbPath, err := downloadThumbnail(video.ID, video.Thumbnail, videoDir)
+		if err != nil {
+			sendLine("Thumbnail download failed (non-fatal): "+err.Error(), "info")
+		} else {
+			video.Thumbnail = thumbPath
+			sendLine("Thumbnail saved: "+thumbPath, "info")
+		}
+	}
+
 	// Save to store
 	if err := h.store.Add(*video); err != nil {
 		sendLine("Failed to save video metadata: "+err.Error(), "error")
@@ -263,6 +276,12 @@ func (h *Handler) handleDelete(w http.ResponseWriter, r *http.Request) {
 	if err := h.download.DeleteFile(&video); err != nil {
 		h.jsonError(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+
+	// Delete thumbnail if local
+	if strings.HasPrefix(video.Thumbnail, "/thumbnails/") {
+		thumbFile := filepath.Join(h.download.GetVideoDir(), "thumbnails", videoID+".jpg")
+		os.Remove(thumbFile)
 	}
 
 	if err := h.store.Delete(videoID); err != nil {
@@ -410,6 +429,39 @@ func buildFormatSelector(resolution int, vcodec, acodec string) string {
 	parts = append(parts, "bestvideo"+heightFilter+"+bestaudio/best"+heightFilter)
 
 	return strings.Join(parts, "/")
+}
+
+// downloadThumbnail fetches a thumbnail image from url and saves it to the thumbnails directory.
+// Returns the local thumbnail path (e.g. "/thumbnails/videoID.jpg") or an error.
+func downloadThumbnail(videoID, thumbURL, videoDir string) (string, error) {
+	resp, err := http.Get(thumbURL)
+	if err != nil {
+		return "", fmt.Errorf("fetching thumbnail: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("thumbnail HTTP %d", resp.StatusCode)
+	}
+
+	thumbDir := filepath.Join(videoDir, "thumbnails")
+	if err := os.MkdirAll(thumbDir, 0755); err != nil {
+		return "", fmt.Errorf("creating thumbnails dir: %w", err)
+	}
+
+	thumbPath := filepath.Join(thumbDir, videoID+".jpg")
+	f, err := os.Create(thumbPath)
+	if err != nil {
+		return "", fmt.Errorf("creating thumbnail file: %w", err)
+	}
+	defer f.Close()
+
+	if _, err := io.Copy(f, resp.Body); err != nil {
+		os.Remove(thumbPath)
+		return "", fmt.Errorf("writing thumbnail: %w", err)
+	}
+
+	return "/thumbnails/" + videoID + ".jpg", nil
 }
 
 func init() {

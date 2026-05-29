@@ -749,9 +749,9 @@ body {
     flex: 1;
     -webkit-appearance: none;
     appearance: none;
-    height: 32px;
+    height: 16px;
     background: var(--border);
-    border-radius: 16px;
+    border-radius: 8px;
     outline: none;
     cursor: pointer;
     min-width: 80px;
@@ -760,8 +760,8 @@ body {
 .progress-bar::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
-    width: 36px;
-    height: 36px;
+    width: 18px;
+    height: 18px;
     border-radius: 50%;
     background: var(--accent);
     cursor: pointer;
@@ -769,8 +769,8 @@ body {
 }
 
 .progress-bar::-moz-range-thumb {
-    width: 36px;
-    height: 36px;
+    width: 18px;
+    height: 18px;
     border-radius: 50%;
     background: var(--accent);
     cursor: pointer;

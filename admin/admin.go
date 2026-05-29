@@ -26,10 +26,15 @@ var templatesFS embed.FS
 type Handler struct {
 	store    *store.VideoStore
 	download *downloader.Downloader
+	thumbDir string
 }
 
-func NewHandler(s *store.VideoStore, d *downloader.Downloader) *Handler {
-	return &Handler{store: s, download: d}
+func NewHandler(s *store.VideoStore, d *downloader.Downloader, dataDir string) *Handler {
+	return &Handler{
+		store:    s,
+		download: d,
+		thumbDir: filepath.Join(dataDir, "thumbnails"),
+	}
 }
 
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
@@ -245,7 +250,7 @@ func (h *Handler) handleDownload(w http.ResponseWriter, r *http.Request) {
 	// Download and save thumbnail locally
 	if video.Thumbnail != "" {
 		sendLine("Downloading thumbnail...", "info")
-		thumbPath, err := downloadThumbnail(video.ID, video.Thumbnail, videoDir)
+		thumbPath, err := downloadThumbnail(video.ID, video.Thumbnail, h.thumbDir)
 		if err != nil {
 			sendLine("Thumbnail download failed (non-fatal): "+err.Error(), "info")
 		} else {
@@ -280,7 +285,7 @@ func (h *Handler) handleDelete(w http.ResponseWriter, r *http.Request) {
 
 	// Delete thumbnail if local
 	if strings.HasPrefix(video.Thumbnail, "/thumbnails/") {
-		thumbFile := filepath.Join(h.download.GetVideoDir(), "thumbnails", videoID+".jpg")
+		thumbFile := filepath.Join(h.thumbDir, videoID+".jpg")
 		os.Remove(thumbFile)
 	}
 
@@ -318,9 +323,9 @@ func (h *Handler) handleUpload(w http.ResponseWriter, r *http.Request) {
 	title := strings.TrimSpace(r.FormValue("title"))
 	channel := strings.TrimSpace(r.FormValue("channel"))
 
+	// Auto-derive title from filename if not provided
 	if title == "" {
-		h.jsonError(w, "title is required", http.StatusBadRequest)
-		return
+		title = filenameToTitle(header.Filename)
 	}
 	if channel == "" {
 		h.jsonError(w, "channel is required", http.StatusBadRequest)
@@ -355,17 +360,31 @@ func (h *Handler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		h.jsonError(w, "failed to write file", http.StatusInternalServerError)
 		return
 	}
+	dst.Close()
+
+	// Get duration via ffprobe
+	duration := 0
+	if dur, err := probeDuration(savePath); err == nil {
+		duration = dur
+	}
+
+	// Generate thumbnail via ffmpeg
+	thumbPath := ""
+	if err := generateThumbnail(savePath, h.thumbDir, id); err == nil {
+		thumbPath = "/thumbnails/" + id + ".jpg"
+	}
 
 	video := store.Video{
 		ID:        id,
 		Title:     title,
 		Channel:   channel,
 		FilePath:  savePath,
-		Duration:  0,
+		Duration:  duration,
 		FileSize:  written,
 		Format:    strings.TrimPrefix(ext, "."),
 		DateAdded: time.Now(),
 		ViewCount: 0,
+		Thumbnail: thumbPath,
 	}
 
 	if err := h.store.Add(video); err != nil {
@@ -433,7 +452,7 @@ func buildFormatSelector(resolution int, vcodec, acodec string) string {
 
 // downloadThumbnail fetches a thumbnail image from url and saves it to the thumbnails directory.
 // Returns the local thumbnail path (e.g. "/thumbnails/videoID.jpg") or an error.
-func downloadThumbnail(videoID, thumbURL, videoDir string) (string, error) {
+func downloadThumbnail(videoID, thumbURL, thumbDir string) (string, error) {
 	resp, err := http.Get(thumbURL)
 	if err != nil {
 		return "", fmt.Errorf("fetching thumbnail: %w", err)
@@ -444,7 +463,6 @@ func downloadThumbnail(videoID, thumbURL, videoDir string) (string, error) {
 		return "", fmt.Errorf("thumbnail HTTP %d", resp.StatusCode)
 	}
 
-	thumbDir := filepath.Join(videoDir, "thumbnails")
 	if err := os.MkdirAll(thumbDir, 0755); err != nil {
 		return "", fmt.Errorf("creating thumbnails dir: %w", err)
 	}
@@ -462,6 +480,61 @@ func downloadThumbnail(videoID, thumbURL, videoDir string) (string, error) {
 	}
 
 	return "/thumbnails/" + videoID + ".jpg", nil
+}
+
+// filenameToTitle derives a title from a filename by stripping extension
+// and replacing underscores/hyphens with spaces.
+func filenameToTitle(filename string) string {
+	base := strings.TrimSuffix(filename, filepath.Ext(filename))
+	base = strings.ReplaceAll(base, "_", " ")
+	base = strings.ReplaceAll(base, "-", " ")
+	return strings.TrimSpace(base)
+}
+
+// probeDuration uses ffprobe to get the video duration in seconds.
+func probeDuration(filePath string) (int, error) {
+	cmd := exec.Command("ffprobe",
+		"-v", "error",
+		"-show_entries", "format=duration",
+		"-of", "csv=p=0",
+		filePath,
+	)
+	out, err := cmd.Output()
+	if err != nil {
+		return 0, fmt.Errorf("ffprobe: %w", err)
+	}
+	durStr := strings.TrimSpace(string(out))
+	if durStr == "" {
+		return 0, fmt.Errorf("empty duration")
+	}
+	var dur float64
+	if _, err := fmt.Sscanf(durStr, "%f", &dur); err != nil {
+		return 0, fmt.Errorf("parsing duration: %w", err)
+	}
+	return int(dur), nil
+}
+
+// generateThumbnail extracts a frame from the video at 5 seconds using ffmpeg.
+func generateThumbnail(videoPath, thumbDir, videoID string) error {
+	if err := os.MkdirAll(thumbDir, 0755); err != nil {
+		return fmt.Errorf("creating thumbnails dir: %w", err)
+	}
+
+	thumbPath := filepath.Join(thumbDir, videoID+".jpg")
+	cmd := exec.Command("ffmpeg",
+		"-y",
+		"-i", videoPath,
+		"-vframes", "1",
+		"-ss", "00:00:05",
+		"-q:v", "2",
+		"-update", "1",
+		thumbPath,
+	)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("ffmpeg: %w, output: %s", err, string(out))
+	}
+	return nil
 }
 
 func init() {

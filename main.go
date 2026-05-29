@@ -17,7 +17,7 @@ import (
 func main() {
 	port := flag.String("port", ":8080", "HTTP server port")
 	dataDir := flag.String("data", "./data", "Data directory for metadata")
-	videoDir := flag.String("videos", "./data", "Directory for downloaded videos")
+	videoDir := flag.String("videos", "./data/videos", "Directory for downloaded videos")
 	flag.Parse()
 
 	// Ensure directories exist
@@ -26,6 +26,9 @@ func main() {
 	}
 	if err := os.MkdirAll(*videoDir, 0755); err != nil {
 		log.Fatalf("Failed to create videos directory: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(*dataDir, "thumbnails"), 0755); err != nil {
+		log.Fatalf("Failed to create thumbnails directory: %v", err)
 	}
 
 	// Initialize store
@@ -46,7 +49,7 @@ func main() {
 	publicHandler.RegisterRoutes(mux)
 
 	// Admin routes
-	adminHandler := admin.NewHandler(videoStore, download)
+	adminHandler := admin.NewHandler(videoStore, download, *dataDir)
 	adminHandler.RegisterRoutes(mux)
 
 	// Serve static files

@@ -178,7 +178,12 @@
             playerSection.classList.remove('hidden');
             playerSection.classList.add('full-width-player');
             container.classList.add('full-width');
-            player.play();
+            const playPromise = player.play();
+            if (playPromise) {
+                playPromise.catch(() => {
+                    playPauseBtn.textContent = '▶';
+                });
+            }
             playPauseBtn.textContent = '⏸';
             renderVideos(allVideos);
 
@@ -254,8 +259,11 @@
         });
 
         progressBar.addEventListener('input', () => {
+            if (!player.duration || isNaN(player.duration)) return;
             const seekTime = (progressBar.value / 1000) * player.duration;
-            player.currentTime = seekTime;
+            if (isFinite(seekTime)) {
+                player.currentTime = seekTime;
+            }
         });
 
         muteBtn.addEventListener('click', () => {

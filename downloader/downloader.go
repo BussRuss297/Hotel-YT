@@ -60,7 +60,6 @@ var vcodecFamilies = []struct {
 	label  string
 }{
 	{"avc1", "avc1", "H.264"},
-	{"vp9", "vp9", "VP9"},
 	{"av01", "av01", "AV1"},
 	{"hvc1", "hvc1|hev1", "H.265"},
 	{"hev1", "hvc1|hev1", "H.265"},
@@ -72,9 +71,6 @@ var acodecFamilies = []struct {
 	label  string
 }{
 	{"mp4a", "mp4a", "AAC"},
-	{"opus", "opus", "Opus"},
-	{"vorbis", "vorbis", "Vorbis"},
-	{"mp3", "mp3", "MP3"},
 }
 
 func (d *Downloader) GetInfo(url string) (*store.Video, error) {

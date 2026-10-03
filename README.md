@@ -83,8 +83,8 @@ The image includes `yt-dlp` and `ffmpeg`, runs as a non-root user, and exposes p
 
 | Page            | URL       | Description                    |
 |-----------------|-----------|--------------------------------|
-| Public Library  | `/`       | Browse and watch videos       |
-| Admin Dashboard | `/admin`  | Download and manage videos    |
+| Public Library  | `/`       | Browse and watch videos        |
+| Admin Dashboard | `/admin`  | Download and manage videos     |
 
 ### Downloading a Video
 
